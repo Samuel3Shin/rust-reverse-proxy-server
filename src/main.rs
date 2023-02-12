@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use tokio::sync::RwLock;
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result};
 use dotenv::dotenv;
-use log::{error, info};
 
 #[macro_use(lazy_static)]
 extern crate lazy_static;
@@ -46,7 +45,7 @@ async fn handle_request(
     let url = &url_with_slash[1..];
 
     if let Some(cached_result) = check_cache(url).await {
-        info!("Cache hit for URL: {}", url);
+        println!("Cache hit for URL: {}", url);
         update_cache_timestamp(url).await;
         return Ok(HttpResponse::Ok().body(cached_result));
     }
@@ -56,34 +55,27 @@ async fn handle_request(
             match response.text().await {
                 Ok(body) => {
                     let cached_data = CacheItem{result:body.clone(), timestamp:Instant::now()};
+                    println!("Cache miss for URL: {}", url);
+                    println!("Add cache for URL: {}", url);
                     insert_cache(url, cached_data).await;
                     Ok(HttpResponse::Ok().body(body))
                 }
-                Err(error) => {
-                    error!("Error getting response body for URL {}: {}", url, error);
-                    Err(actix_web::error::ErrorBadRequest("Error getting response body"))
-                }
+                Err(error) => Err(actix_web::error::ErrorBadRequest(error))                
             }
         }
-        Err(error) => {
-            error!("Error getting response for URL {}: {}", url, error);
-            Err(actix_web::error::ErrorBadRequest("Error getting response"))
-        }
+        Err(error) => Err(actix_web::error::ErrorBadRequest(error))
     }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
-    env_logger::init();
-
     let local_host_ip = std::env::var("LOCAL_HOST_IP")
         .expect("LOCAL_HOST_IP must be set.");
     let local_host_port = std::env::var("LOCAL_HOST_PORT")
         .expect("LOCAL_HOST_PORT must be set.")
         .parse()
         .expect("LOCAL_HOST_PORT must be a valid u16");
-
     let remove_old_cache_interval = std::env::var("REMOVE_OLD_CACHE_INTERVAL")
         .expect("REMOVE_OLD_CACHE_INTERVAL must be set.")
         .parse()
@@ -92,7 +84,6 @@ async fn main() -> std::io::Result<()> {
         .expect("CACHE_LIFETIME must be set.")
         .parse()
         .expect("CACHE_LIFETIME must be a valid u64");
-
     let remove_old_cache_interval = Duration::from_secs(remove_old_cache_interval);
     let cache_lifetime = Duration::from_secs(cache_lifetime);
 
