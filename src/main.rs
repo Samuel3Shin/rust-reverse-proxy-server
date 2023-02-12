@@ -2,6 +2,8 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use actix_web::{ web, App, Error, HttpRequest, HttpResponse, HttpServer, Result };
+use dotenv::dotenv;
+
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
@@ -72,9 +74,17 @@ async fn handle_request(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let one_second = Duration::new(1, 0);
+    dotenv().ok();
+    let local_host_ip = std::env::var("LOCAL_HOST_IP").expect("LOCAL_HOST_IP must be set.");
+    let local_host_port = std::env::var("LOCAL_HOST_PORT").expect("LOCAL_HOST_PORT must be set.")
+                                .parse::<u16>().unwrap();
+    let remove_old_cache_interval = std::env::var("REMOVE_OLD_CACHE_INTERVAL")
+                                        .expect("REMOVE_OLD_CACHE_INTERVAL must be set.").parse::<u64>().unwrap();
+    let cache_lifetime = std::env::var("CACHE_LIFETIME").expect("CACHE_LIFETIME must be set.").parse::<u64>().unwrap();
+    
+    let one_second = Duration::new(remove_old_cache_interval, 0);
     let mut remove_old_cache_interval = tokio::time::interval(one_second);
-    let thirty_seconds = Duration::new(30, 0);
+    let thirty_seconds = Duration::new(cache_lifetime, 0);
     
     tokio::task::spawn(async move {
         loop {
@@ -91,7 +101,7 @@ async fn main() -> std::io::Result<()> {
         .app_data(web::Data::new(reqwest_client.clone()))
         .default_service(web::to(handle_request))
         })
-        .bind(("127.0.0.1", 7878))?
+        .bind((local_host_ip, local_host_port))?
         .run()
         .await
 }
