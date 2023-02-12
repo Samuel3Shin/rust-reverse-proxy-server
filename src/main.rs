@@ -1,12 +1,7 @@
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-
-use actix_web::{
-    web, App, Error, HttpRequest, HttpResponse,
-    HttpServer, Result
-};
-
+use actix_web::{ web, App, Error, HttpRequest, HttpResponse, HttpServer, Result };
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
@@ -40,9 +35,9 @@ async fn update_cache_timestamp(url:&str) {
     cache.get_mut(url).unwrap().timestamp = Instant::now();
 }
 
-async fn remove_old_cache(thirty_seconds:Duration) {
+async fn remove_old_cache(cache_lifetime:Duration) {
     let mut cache = CACHE.write().await;
-    cache.retain(|_, val| val.timestamp.elapsed()<thirty_seconds);
+    cache.retain(|_, val| val.timestamp.elapsed()<cache_lifetime);
 }
 
 async fn handle_request(
@@ -78,19 +73,19 @@ async fn handle_request(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let one_second = Duration::new(1, 0);
-    let mut interval = tokio::time::interval(one_second);
+    let mut remove_old_cache_interval = tokio::time::interval(one_second);
     let thirty_seconds = Duration::new(30, 0);
     
     tokio::task::spawn(async move {
         loop {
-            interval.tick().await;
+            remove_old_cache_interval.tick().await;
             remove_old_cache(thirty_seconds).await;
         }
     });
 
     let reqwest_client = reqwest::Client::default();
 
-    HttpServer::new(move|| 
+    HttpServer::new(move || 
         {
         App::new()
         .app_data(web::Data::new(reqwest_client.clone()))
