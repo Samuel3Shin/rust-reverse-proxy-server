@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use actix_web::{ web, App, Error, HttpRequest, HttpResponse, HttpServer, Result };
+use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result};
 use dotenv::dotenv;
 
 #[macro_use(lazy_static)]
@@ -9,19 +9,17 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref CACHE: RwLock<HashMap<String, CacheItem>> = {
-        let hm = HashMap::new();
-        RwLock::new(hm)
+        HashMap::new().into()
     };
 }
 
 struct CacheItem {
     result: String,
-    timestamp: std::time::Instant,
+    timestamp: Instant,
 }
 
-async fn insert_cache(url:&str, cached_data:CacheItem) {
-    let mut cache = CACHE.write().await;
-    cache.insert((*url).to_string(), cached_data);
+async fn insert_cache(url: &str, cached_data: CacheItem) {
+    CACHE.write().await.insert(url.to_owned(), cached_data);
 }
 
 async fn check_cache(url:&str) -> String{
@@ -29,7 +27,7 @@ async fn check_cache(url:&str) -> String{
     if let Some(cached_item) = cache.get(url) {
         return cached_item.result.clone();
     }
-    "".to_string()
+    "".to_owned()
 }
 
 async fn update_cache_timestamp(url:&str) {
