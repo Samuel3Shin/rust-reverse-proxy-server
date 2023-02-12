@@ -56,7 +56,6 @@ async fn handle_request(
                 Ok(body) => {
                     let cached_data = CacheItem{result:body.clone(), timestamp:Instant::now()};
                     println!("Cache miss for URL: {}", url);
-                    println!("Add cache for URL: {}", url);
                     insert_cache(url, cached_data).await;
                     Ok(HttpResponse::Ok().body(body))
                 }
