@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use tokio::sync::RwLock;
 
 use actix_web::{
     web, App, Error, HttpRequest, HttpResponse,
@@ -10,30 +10,39 @@ use actix_web::{
 #[macro_use(lazy_static)]
 extern crate lazy_static;
 
+lazy_static! {
+    static ref CACHE: RwLock<HashMap<String, CacheItem>> = {
+        let hm = HashMap::new();
+        RwLock::new(hm)
+    };
+}
+
 struct CacheItem {
     result: String,
     timestamp: std::time::Instant,
 }
 
-lazy_static! {
-    static ref CACHE: Mutex<HashMap<String, CacheItem>> = {
-        let hm = HashMap::new();
-        Mutex::new(hm)
-    };
+async fn insert_cache(url:&str, cached_data:CacheItem) {
+    let mut cache = CACHE.write().await;
+    cache.insert((*url).to_string(), cached_data);
 }
 
-fn check_cache(url:&str) -> String{
-    let cache = CACHE.lock().unwrap();
+async fn check_cache(url:&str) -> String{
+    let cache = CACHE.read().await;
     if let Some(cached_item) = cache.get(url) {
-        println!("Cache hit!");
         return cached_item.result.clone();
     }
     "".to_string()
 }
 
-fn insert_cache(url:&str, cached_data:CacheItem) {
-    let mut cache = CACHE.lock().unwrap();
-    cache.insert((*url).to_string(), cached_data);
+async fn update_cache_timestamp(url:&str) {
+    let mut cache = CACHE.write().await;
+    cache.get_mut(url).unwrap().timestamp = Instant::now();
+}
+
+async fn remove_old_cache(thirty_seconds:Duration) {
+    let mut cache = CACHE.write().await;
+    cache.retain(|_, val| val.timestamp.elapsed()<thirty_seconds);
 }
 
 async fn handle_request(
@@ -44,8 +53,10 @@ async fn handle_request(
     let url_with_slash = format!("{}", uri);
     let url = &url_with_slash[1..];
 
-    let cached_result = check_cache(url);
+    let cached_result = check_cache(url).await;
     if !cached_result.is_empty() {
+        println!("Cache hit!");
+        update_cache_timestamp(url).await;
         return Ok(HttpResponse::Ok().body(cached_result));
     }
 
@@ -54,7 +65,7 @@ async fn handle_request(
             match response.text().await {
                 Ok(body) => {
                     let cached_data = CacheItem{result:body.clone(), timestamp:Instant::now()};
-                    insert_cache(url, cached_data);
+                    insert_cache(url, cached_data).await;
                     Ok(HttpResponse::Ok().body(body))
                 }
                 Err(error) => Err(actix_web::error::ErrorBadRequest(error))
@@ -64,23 +75,11 @@ async fn handle_request(
     }
 }
 
-async fn remove_old_cache(thirty_seconds:Duration) {
-    let mut cache = CACHE.lock().unwrap();
-    // for (key, val) in cache.iter() {
-    //     println!("{}", key);
-    //     println!("{:?}", val.timestamp.elapsed());
-    //     println!("{:?}", val.timestamp.elapsed()>Duration::new(10, 0));
-    // }
-
-    cache.retain(|_, val| val.timestamp.elapsed()<thirty_seconds);
-    // println!("haha!");
-}
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let one_second = Duration::new(1, 0);
     let mut interval = tokio::time::interval(one_second);
-    let thirty_seconds = Duration::new(10, 0);
+    let thirty_seconds = Duration::new(30, 0);
     
     tokio::task::spawn(async move {
         loop {
@@ -97,7 +96,7 @@ async fn main() -> std::io::Result<()> {
         .app_data(web::Data::new(reqwest_client.clone()))
         .default_service(web::to(handle_request))
         })
-        .bind(("127.0.0.1", 8081))?
+        .bind(("127.0.0.1", 7878))?
         .run()
         .await
 }
