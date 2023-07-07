@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result};
-use dotenv::dotenv;
 
 #[macro_use(lazy_static)]
 extern crate lazy_static;
@@ -68,21 +67,18 @@ async fn handle_request(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenv().ok();
-    let local_host_ip = std::env::var("LOCAL_HOST_IP")
-        .expect("LOCAL_HOST_IP must be set.");
-    let local_host_port = std::env::var("LOCAL_HOST_PORT")
-        .expect("LOCAL_HOST_PORT must be set.")
-        .parse()
-        .expect("LOCAL_HOST_PORT must be a valid u16");
-    let remove_old_cache_interval = std::env::var("REMOVE_OLD_CACHE_INTERVAL")
-        .expect("REMOVE_OLD_CACHE_INTERVAL must be set.")
-        .parse()
-        .expect("REMOVE_OLD_CACHE_INTERVAL must be a valid u64");
-    let cache_lifetime = std::env::var("CACHE_LIFETIME")
-        .expect("CACHE_LIFETIME must be set.")
-        .parse()
-        .expect("CACHE_LIFETIME must be a valid u64");
+    let mut settings = config::Config::default();
+    settings
+        .merge(config::File::with_name("Settings"))
+        .unwrap()
+        .merge(config::Environment::with_prefix("app"))
+        .unwrap();
+
+    let local_host_ip: String = settings.get_str("LOCAL_HOST_IP").unwrap();
+    let local_host_port: u16 = settings.get::<u16>("LOCAL_HOST_PORT").unwrap();
+    let remove_old_cache_interval: u64 = settings.get::<u64>("REMOVE_OLD_CACHE_INTERVAL").unwrap();
+    let cache_lifetime: u64 = settings.get::<u64>("CACHE_LIFETIME").unwrap();
+
     let remove_old_cache_interval = Duration::from_secs(remove_old_cache_interval);
     let cache_lifetime = Duration::from_secs(cache_lifetime);
 
